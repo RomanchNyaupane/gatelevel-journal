@@ -1,3 +1,6 @@
+`include "subnormal_detection.v"
+`include "prenormalization.v"
+
 module FPU(
     input wire [31:0] FP_in1, FP_in2,
     input wire calc_mode,           //  // 0 for addition, 1 for subtraction
@@ -42,9 +45,9 @@ reg [23:0] S_12_norm_mantissa1, S_12_norm_mantissa2;
 reg S_12_FP_1_sign, S_12_FP_2_sign; // Sign bits of the inputs
 
 reg [25:0] S_23_FP_result;  //26th bit is 1 if sign of result is negative
-reg 
+reg [1:0] S_23_round_mode;
 
-
+reg [25:0] S_34_FP_result; // 26 bits to hold the result after rounding
 
 always @ (posedge clk) begin
 //stage 0-1
@@ -75,7 +78,7 @@ always @ (posedge clk) begin
                 S_23_FP_result[25] <= 1'b1; // Result is negative
             end
         3'b111 : S_23_FP_result <= {1'b0, S_12_norm_mantissa2} - {1'b0, S_12_norm_mantissa1}; //both are negative
-    //ad3ition
+    //addition
         3'b000 : S_23_FP_result <= {1'b0, S_12_norm_mantissa1} + {1'b0, S_12_norm_mantissa2}; //both are positive
         3'b001 : S_23_FP_result <= {1'b0, S_12_norm_mantissa1} - {1'b0, S_12_norm_mantissa2}; //FP_in1 is positive, FP_in2 is negative
         3'b010 : S_23_FP_result <= {1'b0, S_12_norm_mantissa2} - {1'b0, S_12_norm_mantissa1}; //FP_in1 is negative, FP_in2 is positive
@@ -89,7 +92,43 @@ always @ (posedge clk) begin
         end
     endcase
 
+    S_23_round_mode <= S_12_round_mode;
 
+//stage 3-4
+    case (S_23_round_mode)
+        2'b00: begin // Round to nearest even
+            if (S_23_FP_result[0]) begin
+                S_34_FP_result <= S_23_FP_result[25:0] + 1; // Add 1 if the 25th bit is set
+            end else begin
+                S_34_FP_result <= S_23_FP_result[25:0]; // No change if the 25th bit is not set
+            end
+        end
+        2'b01: begin // Round towards zero
+            S_34_FP_result <= {S_23_FP_result[25:1], 1'b0}; // Just truncate the last bit
+        end
+        2'b10: begin // Round towards positive infinity
+            if (S_23_FP_result[25]) begin // If the result is negative, do not round up
+                S_34_FP_result <= S_23_FP_result[25:0]; // No change if negative
+            end else begin
+                S_34_FP_result <= S_23_FP_result[25:0] + 1; // Round up if positive
+            end
+        end
+        2'b11: begin // Round towards negative infinity
+            if (S_23_FP_result[25]) begin // If the result is negative, round down
+                S_34_FP_result <= S_23_FP_result[25:0] - 1; // Round down if negative
+            end else begin
+                S_34_FP_result <= S_23_FP_result[25:0]; // No change if positive
+            end
+        end
+        default: begin
+            S_34_FP_result <= 26'b0; // Default case, should not happen
+        end
+    endcase
+    if (S_34_FP_result[25]) begin
+        FP_result <= {1'b1, S_34_FP_result[24:1]}; // Set sign bit and shift right
+    end else begin
+        FP_result <= {1'b0, S_34_FP_result[24:1]}; // Set sign bit to 0 and shift right
+    end
 
 end
 endmodule
