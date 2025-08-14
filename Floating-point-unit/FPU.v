@@ -1,9 +1,10 @@
 `include "subnormal_detection.v"
 `include "prenormalization.v"
+`include "postnormalization.v"
 
 module FPU(
     input wire [31:0] FP_in1, FP_in2,
-    input wire calc_mode,           //  // 0 for addition, 1 for subtraction
+    input wire calc_mode,           // 0 for addition, 1 for subtraction
     input wire [1:0] round_mode,
     input wire clk, reset,
 
@@ -15,6 +16,7 @@ module FPU(
 wire is_subnormal1, is_subnormal2;
 wire [23:0] normalized_mantissa1, normalized_mantissa2;
 wire [7:0] main_exponent;
+wire [31:0] out;
 
 subnormal_detection subnorm_in1(
     .FP_in(FP_in1),
@@ -33,6 +35,16 @@ prenormalization prenorm(
     .FP_norm1(normalized_mantissa1),// Assuming prenormalization outputs 24 bits 
     .FP_norm2(normalized_mantissa2),// Assuming prenormalization outputs 24 bits
     .main_exponent(main_exponent)
+);
+postnormalization postnorm(
+    .result_sign(S_23_FP_result[25]),
+    .extra_exponent(S_23_FP_result[24]),
+    .main_exponent(S_23_main_exponent),
+    .first_exponent(S_23_FP_result[23]),
+    .FP_result(S_23_FP_result[22:0]),
+    .round_mode(S_23_round_mode),
+    .FP_out(out),
+    .clk(clk)
 );
 
 reg [1:0] S_01_round_mode;
@@ -97,62 +109,19 @@ always @ (posedge clk) begin
                     optype <= 3'b011;
                  end
 
-        default: begin
-            S_23_FP_result <= 26'b0; // Default case, should not happen
-        end
-    endcase
+        default: begin 
+            S_23_FP_result <= 26'b0;
+        end 
+    endcase 
 
     S_23_round_mode <= S_12_round_mode;
     S_23_main_exponent <= main_exponent;
 
-//stage 3-4
-    S_34_result_sign <= S_23_FP_result[25];
-    S_34_extra_exponent <= S_23_FP_result[24];
-    S_34_main_exponent <= S_23_main_exponent;
-    S_34_first_exponent <= S_23_FP_result[23];
-    case (S_23_round_mode)
-        2'b00: begin //round to nearest even
-            if (S_23_FP_result[0]) begin
-                S_34_FP_result <= S_23_FP_result[22:0] + 1'b1; // Add 1 if the 25th bit is set
-            end else begin
-                S_34_FP_result <= S_23_FP_result[22:0]; //no change if the 25th bit is not set
-            end
-        end
-        2'b01: begin // Round towards zero
-            S_34_FP_result <= {S_23_FP_result[22:1], 1'b0}; // Just truncate the last bit
-        end
-        2'b10: begin // Round towards positive infinity
-            if (S_23_FP_result[25]) begin // If the result is negative, do not round up
-                S_34_FP_result <= S_23_FP_result[22:0]; // No change if negative
-            end else begin
-                S_34_FP_result <= S_23_FP_result[22:0] + 1; //round up if positive
-            end
-        end
-        2'b11: begin //round towards negative infinity
-            if (S_23_FP_result[25]) begin // If the result is negative, round down
-                S_34_FP_result <= S_23_FP_result[22:0] - 1; // Round down if negative
-            end else begin
-                S_34_FP_result <= S_23_FP_result[22:0]; // No change if positive
-            end
-        end
-        default: begin
-            S_34_FP_result <= S_23_FP_result[22:0]; // Default case, should not happen
-        end
-    endcase
-    if (S_34_extra_exponent) begin
-        FP_result <= {S_34_result_sign, (S_34_main_exponent + 8'b1), {S_34_first_exponent, S_34_FP_result[22:1]}};
-    end else begin
-        if(S_34_first_exponent) begin
-            FP_result <= {S_34_result_sign, S_34_main_exponent, S_34_FP_result[22:0]};
-            res1<=1;
-            res2<=0;
-        end else begin
-            FP_result <= {S_34_result_sign, S_34_main_exponent - 1'b1, S_34_FP_result[22:0] << 1'b1};
-            res2<=1;
-            res1<=0;
-        end
-        
-    end
+    //stage 3-4
+    FP_result <= out;
 
 end
+
+
+
 endmodule
