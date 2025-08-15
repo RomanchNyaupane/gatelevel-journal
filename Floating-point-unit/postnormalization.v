@@ -15,6 +15,8 @@ module postnormalization(
     reg S_34_extra_exponent;
     reg [7:0] S_34_main_exponent;
 
+    reg [2:0] res;
+
     wire [4:0] shift_amt;
     wire [22:0] FP_result_shifted;
 
@@ -82,14 +84,17 @@ always @(posedge clk) begin
         end
     endcase
     if (S_34_extra_exponent) begin
-        if(!((S_34_extra_exponent)&&(S_34_FP_result))) FP_out <= 32'b0;
-        else  FP_out <= {S_34_result_sign, (S_34_main_exponent + 8'b1), {S_34_first_exponent, S_34_FP_result[22:1]}};
+        if(((S_34_main_exponent == 1'b0)&&(S_34_FP_result == 22'b0))) begin FP_out <= 32'b0; res <= 3'b000; end
+        else if(S_34_extra_exponent && S_34_result_sign) begin FP_out <= {S_34_result_sign, (S_34_main_exponent), S_34_FP_result[22:0]}; res <= 3'b001; end
+        else begin FP_out <= {S_34_result_sign, (S_34_main_exponent + 8'b1), {S_34_first_exponent, S_34_FP_result[22:1]}}; res <= 3'b010; end
     end else begin
          if(S_34_first_exponent) begin
              FP_out <= {S_34_result_sign, S_34_main_exponent, S_34_FP_result[22:0]};
+             res <= 3'b100;
          end else if (!((S_34_FP_result))) begin
              FP_out <= 32'b0;
-         end else FP_out <= {S_34_result_sign,(S_34_main_exponent - shift_amt) ,FP_result_shifted};
+             res <= 3'b101;
+         end else begin FP_out <= {S_34_result_sign,(S_34_main_exponent - shift_amt) ,FP_result_shifted}; res <= 3'b110; end
     end
 end
 endmodule
