@@ -36,7 +36,6 @@ module axi_slave #(
 	output	wire	[C_AXI_DATA_WIDTH-1:0]		i_axi_rdata,   // Read data
 	input	wire								i_axi_rready,  // Read Response ready
 
-	
 	output	reg	[(F_LGDEPTH-1):0]	f_axi_rd_outstanding,
 	output	reg	[(F_LGDEPTH-1):0]	f_axi_wr_outstanding,
 	output	reg	[(F_LGDEPTH-1):0]	f_axi_awr_outstanding
@@ -62,6 +61,8 @@ wire axi_ard_req, axi_awr_req, axi_wr_req, axi_rd_ack, axi_wr_ack;
 reg [REGISTER_WIDTH-1:0] reg_0, reg_1, reg_2, reg_3;
 
 reg [31:0] axil_rdata;
+reg [3:0] wait_counter_read, wait_counter_write;
+reg busy;
 
 // output is combinational
 assign i_axi_rdata = axil_rdata;
@@ -91,8 +92,12 @@ always @(posedge i_clk) begin
 		reg_1 <= 0;
 		reg_2 <= 0;
 		reg_3 <= 0;
+		wait_counter <= 0;
+		busy <= 0;
 	end else begin
-		if (axi_ard_req) begin
+		if (axi_awr_req && axi_wr_req && !busy) begin
+		busy <= 1;
+		i_axi_bvalid <= 1;
 			case (i_axi_awaddr)
 				2'b00: reg_0 <= wskd_r0;
 				2'b01: reg_1 <= wskd_r1;
@@ -100,7 +105,7 @@ always @(posedge i_clk) begin
 				2'b11: reg_3 <= wskd_r3;
 				default: {};
 			endcase
-		end
+		end else begin busy <= 0; i_axi_bvalid <= 0; end
 		end
 end
 
@@ -110,9 +115,13 @@ always @(posedge i_clk) begin
 		reg_0 <= 0;
 		reg_1 <= 0;
 		reg_2 <= 0;
-		reg_3 <= 0;	
+		reg_3 <= 0;
+		wait_counter <= 0;	
+		busy <= 0;
 	end else begin
-		if (axi_awr_req) begin
+		if (axi_ard_req && && !busy) begin
+		busy <= 1;
+		i_axi_rvalid <= 1;
 			case (i_axi_awaddr)
 				2'b00: axil_rdata <= reg_0;
 				2'b01: axil_rdata <= reg_1;
@@ -120,10 +129,30 @@ always @(posedge i_clk) begin
 				2'b11: axil_rdata <= reg_3;
 				default: {};
 			endcase
-		end
+		end else begin busy <= 0; i_axi_rvalid <= 0; end
 		end
 end
 
-
+//trigger acknowledge signals
+always @(posedge i_clk) begin
+		if (reset) begin
+		reg_0 <= 0;
+		reg_1 <= 0;
+		reg_2 <= 0;
+		reg_3 <= 0;
+		wait_counter <= 0;
+		busy <= 0;
+	end else begin
+		if(i_axi_awvalid && !busy) begin	// trigger write address ready
+			i_axi_awready <= 1;
+		end else i_axi_awready <= 0;
+		if(i_axi_arvalid && !busy) begin	// trigger read address ready
+			i_axi_arready <= 1;
+		end else i_axi_arready <= 0;
+		if(i_axi_wvalid && !busy) begin
+			i_axi_wready <= 1;				// trigger write data ready
+		end else i_axi_wready <= 0;
+	end
+end
 
 endmodule
