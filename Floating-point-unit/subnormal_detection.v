@@ -3,7 +3,7 @@ module subnormal_detection(
     output reg is_subnormal,
     input wire clk
 );
-always @(posedge clk) begin
+always @(*) begin
     is_subnormal <= & (~(FP_in[30:23]));
 end
 
