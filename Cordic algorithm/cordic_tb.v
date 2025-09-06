@@ -1,106 +1,83 @@
-`timescale 1ns/1ps
-
+`timescale 1ns/100ps
 module cordic_tb;
+//declare register and wires for connecting with DUT
+reg signed [31:0] angle;
+reg clk, reset;
+wire [31:0] x,y;
 
-// Parameters
-parameter CLK_PERIOD = 10;  // 100 MHz clock
-parameter STAGES = 6;
-parameter K = 256;          // CORDIC scaling factor (0.607 * 2^9)
-
-// Signals
-reg clk;
-reg reset;
-reg [15:0] angle;
-wire [15:0] x_out, y_out;
-
-// Instantiate DUT
-cordic dut (
+reg signed [31:0] test_angles [0:24];
+integer i,j;
+//instantiate the DUT
+cordic cord_inst(
     .angle(angle),
     .clk(clk),
     .reset(reset),
-    .x(x_out),
-    .y(y_out)
+    .x(x), .y(y)
 );
 
-// Clock generation
-initial begin
-    clk = 0;
-    forever #(CLK_PERIOD/2) clk = ~clk;
-end
+//initialize and generate clock
+initial clk = 0;
+always #5 clk = ~clk;
 
-// Angle to degrees conversion function
-function real angle_to_degrees;
-    input [15:0] angle;
+task inp_prov;
+    input signed [31:0] task_angle;
+    
     begin
-        // Convert 16-bit fixed-point to degrees (360° = 65536)
-        angle_to_degrees = $itor(angle) * 360.0 / 65536.0;
+    angle = task_angle;
+    #10;
+    $display("%0t | %h %h %d",$time, angle, x, y);
     end
-endfunction
 
-// CORDIC output to real value conversion
-function real cordic_to_real;
-    input [15:0] val;
-    begin
-        cordic_to_real = $itor(val) / $itor(K);
-    end
-endfunction
-
-// Test cases
-task test_angle;
-    input [15:0] test_angle;
-    real expected_cos, expected_sin;
-    real angle_deg;
-    begin
-        angle = test_angle;
-        angle_deg = angle_to_degrees(angle);
-        expected_cos = $cos(angle_deg * 3.1415926/180.0);
-        expected_sin = $sin(angle_deg * 3.1415926/180.0);
-        
-        #(CLK_PERIOD * (STAGES + 2));  // Wait for pipeline
-        
-        $display("Angle: %5.1f° (0x%4h)", angle_deg, angle);
-        $display("  X (cos): %8.4f (0x%4h) | Expected: %8.4f", 
-                 cordic_to_real(x_out), x_out, expected_cos);
-        $display("  Y (sin): %8.4f (0x%4h) | Expected: %8.4f", 
-                 cordic_to_real(y_out), y_out, expected_sin);
-        $display("");
-    end
 endtask
-
-// Main test sequence
 initial begin
-    // Initialize
+    test_angles[0] = 32'sd0000; //0
+    test_angles[1] = 32'sd2731; //15
+    test_angles[2] = 32'sd5461; //30
+    test_angles[3] = 32'sd8192; //45
+    test_angles[4] = 32'sd10923;//60
+    test_angles[5] = 32'sd13654;//75
+    test_angles[6] = 32'sd16386;//90
+    test_angles[7] = 32'sd19115;//105
+    test_angles[8] = 32'sd21846;//120
+    test_angles[9] = 32'sd24576;//135
+    test_angles[10] = 32'sd27307;//150
+    test_angles[11] = 32'sd30038;//165
+    test_angles[12] = 32'sd32768;//180
+    
+    test_angles[13] = 32'sd35499;//15 + 180
+    test_angles[14] = 32'sd38230;//30 + 180
+    test_angles[15] = 32'sd40960;//45 + 180
+    test_angles[16] = 32'sd43691;//60 + 180
+    test_angles[17] = 32'sd46422;//75 + 180
+    test_angles[18] = 32'sd49151;//90 + 180
+    test_angles[19] = 32'sd51883;//105 + 180
+    test_angles[20] = 32'sd54613;//120 + 180
+    test_angles[21] = 32'sd57344;//135 + 180
+    test_angles[22] = 32'sd60075;//150 + 180
+    test_angles[23] = 32'sd62806;//165 + 180
+    test_angles[24] = 32'sd65535;//180 + 180
+end
+//input stimulus
+initial begin
+    angle = 32'sd0000;
     reset = 1;
-    angle = 0;
-    #(CLK_PERIOD*2) reset = 0;
     
-    $display("Starting CORDIC Testbench");
-    $display("-----------------------");
+    #20 reset = 0;
     
-    // Test cases
-    test_angle(16'h0000);    // 0°
-    test_angle(16'h2000);    // 45°
-    test_angle(16'h4000);    // 90°
-    test_angle(16'h6000);    // 135°
-    test_angle(16'h8000);    // 180°
-    test_angle(16'hA000);    // 225°
-    test_angle(16'hC000);    // 270°
-    test_angle(16'hE000);    // 315°
-    test_angle(16'h0B60);    // ~25°
-    test_angle(16'hFEDC);    // ~-5°
-    
-    // Edge cases
-    test_angle(16'hFFFF);    // ~-0.0055°
-    test_angle(16'h7FFF);    // ~179.994°
-    
-    $display("Testbench completed");
+    @(posedge clk);
+    for(i=0; i<5; i = i+1) begin
+        for(j=0; j<=24; j = j+1) begin
+            inp_prov(test_angles[j]);
+        end    
+    end
     $finish;
+    
 end
 
-// Waveform dumping (for debugging)
 initial begin
     $dumpfile("cordic_tb.vcd");
     $dumpvars(0, cordic_tb);
 end
 
 endmodule
+
